@@ -30,7 +30,7 @@ export const useChatStore = create<ChatUiState>((set, get) => ({
   isMobileSidebarOpen: true,
   setMobileSidebarOpen: (open) => set({ isMobileSidebarOpen: open }),
 
-  theme: 'light',
+  theme: 'dark',
   toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
 
   isNewChatDialogOpen: false,
