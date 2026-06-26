@@ -73,7 +73,7 @@ export const MessagePane = () => {
   const headerName = otherUserData?.name ?? 'Conversation';
 
   return (
-    <div className="flex h-full flex-col bg-muted/30">
+    <div className="flex h-full w-full flex-col bg-muted/30">
       <div className="flex items-center gap-3 border-b border-border bg-panel px-4 py-3">
         <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setActiveConversationId(null)}>
           <ArrowLeft className="h-4 w-4" />
