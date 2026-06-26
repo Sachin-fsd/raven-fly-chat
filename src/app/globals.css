@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 14% 18%;
+
+    --panel: 0 0% 100%;
+    --panel-foreground: 222 14% 18%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --border: 220 13% 91%;
+
+    --primary: 152 60% 33%;
+    --primary-foreground: 0 0% 100%;
+
+    --accent: 152 60% 96%;
+    --accent-foreground: 152 60% 25%;
+
+    --bubble-sent: 152 47% 90%;
+    --bubble-sent-foreground: 222 14% 18%;
+    --bubble-received: 0 0% 100%;
+    --bubble-received-foreground: 222 14% 18%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222 16% 10%;
+    --foreground: 210 15% 92%;
+
+    --panel: 222 15% 13%;
+    --panel-foreground: 210 15% 92%;
+
+    --muted: 222 13% 18%;
+    --muted-foreground: 220 9% 60%;
+
+    --border: 222 12% 22%;
+
+    --primary: 152 45% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --accent: 152 30% 18%;
+    --accent-foreground: 152 45% 80%;
+
+    --bubble-sent: 152 30% 22%;
+    --bubble-sent-foreground: 210 15% 94%;
+    --bubble-received: 222 13% 18%;
+    --bubble-received-foreground: 210 15% 94%;
+
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Slim, unobtrusive scrollbars for the inbox and message list */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 999px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
