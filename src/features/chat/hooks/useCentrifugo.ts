@@ -16,11 +16,11 @@ interface NewMessageEvent {
   senderId: string;
   text: string;
   createdAt: string;
-  /** Whether the recipient was online (subscribed to their personal
+  /** 'delivered' if the recipient was online (subscribed to their personal
    *  channel) at the moment this was sent — see centrifugo.config.ts's
-   *  `isAnyoneSubscribedToChannel`. Only meaningful for the sender's own
-   *  message bubble; ignored for messages we're receiving. */
-  delivered: boolean;
+   *  `isAnyoneSubscribedToChannel` — otherwise 'sent'. Only meaningful for
+   *  the sender's own message bubble; ignored for messages we're receiving. */
+  status: 'sent' | 'delivered';
 }
 
 interface ReadReceiptEvent {
@@ -86,7 +86,7 @@ export const useCentrifugo = (currentUserId: string | undefined, conversationIds
     clientRef.current = centrifuge;
     centrifuge.connect();
 
-    const personalChannel = `personal#${currentUserId}`;
+    const personalChannel = `personal:#${currentUserId}`;
     const personalSub = centrifuge.newSubscription(personalChannel);
     personalSub.on('publication', (ctx) => {
       const event = ctx.data as PersonalChannelEvent;
@@ -151,7 +151,18 @@ function handleNewMessageEvent(
     sender_id: event.senderId,
     text: event.text,
     created_at: event.createdAt,
-    status: event.delivered ? 'delivered' : 'sent',
+    status: event.status,
+  };
+
+  // Status ranking so a late-arriving event can never *downgrade* a
+  // message that's already moved further along (e.g. the read receipt
+  // beat this event to the cache — don't stomp 'read' back to 'delivered').
+  const statusRank: Record<NonNullable<MessageDoc['status']>, number> = {
+    sending: 0,
+    failed: 0,
+    sent: 1,
+    delivered: 2,
+    read: 3,
   };
 
   queryClient.setQueryData<MessageDoc[]>(messagesQueryKey(event.conversationId), (existing) => {
@@ -166,7 +177,21 @@ function handleNewMessageEvent(
       }
     }
 
-    if (list.some((m) => m.message_id === incoming.message_id)) return list;
+    // The message may already be in the cache (e.g. the REST response for
+    // our own send landed before this WS event did). In that case this
+    // event is still the authoritative source for sent/delivered, so apply
+    // it to the existing entry instead of silently dropping it.
+    const existingIndex = list.findIndex((m) => m.message_id === incoming.message_id);
+    if (existingIndex !== -1) {
+      const current = list[existingIndex];
+      const currentRank = statusRank[current.status ?? 'sent'];
+      const incomingRank = statusRank[incoming.status ?? 'sent'];
+      if (incomingRank <= currentRank) return list;
+      const next = [...list];
+      next[existingIndex] = { ...current, status: incoming.status };
+      return next;
+    }
+
     return [incoming, ...list];
   });
 

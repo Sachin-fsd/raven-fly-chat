@@ -13,6 +13,7 @@ interface SendMessageResponse {
   text: string;
   senderId: string;
   createdAt: string;
+  status: 'sent' | 'delivered';
 }
 
 // Must stay <= 20 — the backend caps this at 20 to match AstraDB's limit
@@ -98,7 +99,7 @@ export const useChatMessages = (conversationId: string | null, currentUserId: st
       queryClient.setQueryData<MessageDoc[]>(queryKey, (existing) =>
         (existing ?? []).map((m) =>
           m.clientId === variables.clientId
-            ? { ...m, message_id: data.messageId, status: 'sent' as const, created_at: data.createdAt }
+            ? { ...m, message_id: data.messageId, status: data.status, created_at: data.createdAt }
             : m,
         ),
       );
