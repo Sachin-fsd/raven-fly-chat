@@ -19,15 +19,16 @@ export default function ChatPage() {
     if (!isLoading && !isAuthenticated) router.replace('/login');
   }, [isLoading, isAuthenticated, router]);
 
-  const { data: conversations } = useInbox();
+  // Still fetch the inbox so the sidebar can render, but we no longer pass
+  // all conversation IDs to useCentrifugo — only the active one is subscribed.
+  useInbox();
+
   const activeConversationId = useChatStore((s) => s.activeConversationId);
 
-  // One real-time connection for the whole authenticated session, kept in
-  // sync with every conversation currently in the inbox.
-  useCentrifugo(
-    user?.id,
-    (conversations ?? []).map((c) => c.conversation_id),
-  );
+  // One persistent WS connection for the whole session:
+  //  - personal channel always subscribed (keeps user "online" + live inbox updates)
+  //  - conversation channel swapped in/out as the user opens/closes chats
+  useCentrifugo(user?.id, activeConversationId);
 
   if (isLoading || !isAuthenticated) return <FullScreenLoader />;
 

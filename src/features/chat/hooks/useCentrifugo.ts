@@ -48,30 +48,32 @@ type PersonalChannelEvent = InboxUpdateEvent;
 /**
  * One Centrifuge client lives for the lifetime of an authenticated session.
  *
- * Two kinds of channels are subscribed to:
- *  1. `personal#<userId>` — exactly one, for the whole session, from the
- *     moment the user connects. Makes the inbox update live even for a
- *     conversation never opened before, and (via Centrifugo's presence
- *     feature, checked server-side) is what tells the sender whether a
- *     recipient is online at all.
- *  2. `conversation:<id>` — one per conversation already in the inbox.
- *     Carries the live message stream AND read-receipt events. Note: every
- *     inbox conversation stays subscribed here regardless of which one is
- *     actually open on screen — so this can't be used to infer "the other
- *     person has this chat open right now". That's why "seen" status comes
- *     from `read_receipt` (tied to the existing mark-as-read-on-open flow)
- *     rather than from channel subscription itself.
+ * Two kinds of channels are managed:
+ *  1. `personal#<userId>` — always subscribed for the whole session.
+ *     Drives live inbox updates and (via Centrifugo presence) lets the
+ *     backend know the user is online so senders see "delivered" ticks.
  *
- * No typing indicator yet, and no per-channel subscribe authorization
- * beyond Centrifugo's built-in `#` user-limited channel check on the
- * personal channel — see the note in `centrifugo.config.ts` about
- * reintroducing the proxy mechanism later.
+ *  2. `conversation:<id>` — subscribed only for the ONE conversation
+ *     currently open on screen (`activeConversationId`). When the user
+ *     switches chats or goes back to the inbox, the old channel is
+ *     unsubscribed and the new one is subscribed. This keeps WebSocket
+ *     traffic minimal and avoids pulling in messages for conversations
+ *     the user isn't looking at.
+ *
+ * Online/presence detection still works correctly because it is based on
+ * the personal channel (`personal:#<userId>`), not on conversation
+ * subscriptions — see `isAnyoneSubscribedToChannel` in centrifugo.config.ts.
  */
-export const useCentrifugo = (currentUserId: string | undefined, conversationIds: string[]) => {
+export const useCentrifugo = (
+  currentUserId: string | undefined,
+  activeConversationId: string | null,
+) => {
   const queryClient = useQueryClient();
   const clientRef = useRef<Centrifuge | null>(null);
+  // Only ever holds: the personal sub + at most one conversation sub
   const subscriptionsRef = useRef<Map<string, Subscription>>(new Map());
 
+  // ─── Effect 1: connect once and subscribe to the personal channel ───────
   useEffect(() => {
     if (!currentUserId) return;
 
@@ -105,38 +107,41 @@ export const useCentrifugo = (currentUserId: string | undefined, conversationIds
     };
   }, [currentUserId]);
 
+  // ─── Effect 2: swap conversation subscription when active chat changes ───
   useEffect(() => {
     const centrifuge = clientRef.current;
     if (!centrifuge) return;
 
-    conversationIds.forEach((conversationId) => {
-      const channel = `conversation:${conversationId}`;
-      if (subscriptionsRef.current.has(channel)) return;
+    if (!activeConversationId) return;
 
-      const sub = centrifuge.newSubscription(channel);
-      sub.on('publication', (ctx) => {
-        const event = ctx.data as ConversationChannelEvent;
-        if (event.type === 'new_message') {
-          handleNewMessageEvent(queryClient, currentUserId, event);
-        } else if (event.type === 'read_receipt') {
-          handleReadReceiptEvent(queryClient, currentUserId, event);
-        }
-      });
-      sub.subscribe();
-      subscriptionsRef.current.set(channel, sub);
-    });
+    const channel = `conversation:${activeConversationId}`;
 
-    // Only prune `conversation:*` channels here — the personal channel is
-    // managed entirely by the effect above and must never be touched by
-    // this one.
-    const activeChannels = new Set(conversationIds.map((id) => `conversation:${id}`));
-    subscriptionsRef.current.forEach((sub, channel) => {
-      if (channel.startsWith('conversation:') && !activeChannels.has(channel)) {
-        sub.unsubscribe();
-        subscriptionsRef.current.delete(channel);
+    // If Centrifugo's internal registry already holds this channel (e.g. a
+    // previous cleanup only called unsubscribe but not removeSubscription),
+    // reuse it rather than calling newSubscription again — which would throw.
+    const existing = centrifuge.getSubscription(channel);
+    const sub = existing ?? centrifuge.newSubscription(channel);
+
+    sub.on('publication', (ctx) => {
+      const event = ctx.data as ConversationChannelEvent;
+      if (event.type === 'new_message') {
+        handleNewMessageEvent(queryClient, currentUserId, event);
+      } else if (event.type === 'read_receipt') {
+        handleReadReceiptEvent(queryClient, currentUserId, event);
       }
     });
-  }, [conversationIds, currentUserId, queryClient]);
+    sub.subscribe();
+    subscriptionsRef.current.set(channel, sub);
+
+    return () => {
+      // unsubscribe() stops receiving events; removeSubscription() removes it
+      // from Centrifugo's internal registry so newSubscription() won't throw
+      // if this same channel is opened again later.
+      sub.unsubscribe();
+      centrifuge.removeSubscription(sub);
+      subscriptionsRef.current.delete(channel);
+    };
+  }, [activeConversationId, currentUserId, queryClient]);
 };
 
 function handleNewMessageEvent(
@@ -244,9 +249,7 @@ function handleReadReceiptEvent(
 /**
  * Bumps an existing inbox row, or — for a conversation the user has never
  * seen before — inserts a brand new one using the data carried on the
- * event itself, with no REST round-trip needed. The `conversation:<id>`
- * subscription effect picks this new id up automatically on the next
- * render, since it reads from the same inbox query this writes to.
+ * event itself, with no REST round-trip needed.
  */
 function handleInboxUpdateEvent(
   queryClient: ReturnType<typeof useQueryClient>,
