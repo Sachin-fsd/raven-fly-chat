@@ -109,6 +109,5 @@ export const useChatMessages = (conversationId: string | null, currentUserId: st
       );
     },
   });
-
   return { historyQuery, sendMessage: sendMessageMutation, loadOlderMessages };
 };

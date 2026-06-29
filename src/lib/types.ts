@@ -38,7 +38,7 @@ export interface ConversationDoc {
   createdAt: string;
 }
 
-export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'failed';
+export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface MessageDoc {
   conversation_id: string;

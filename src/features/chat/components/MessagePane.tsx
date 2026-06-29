@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { MessageDoc, ConversationDoc } from '@/lib/types';
 import { useChatStore } from '../store/useChatStore';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useConversation } from '../hooks/useConversation';
@@ -32,23 +33,22 @@ export const MessagePane = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-
+  const prevHeightRef = useRef<number>(0);
+  const isRestoringRef = useRef(false);
   const messages = historyQuery.data ?? [];
-
-  // Auto-scroll to the newest message whenever the active conversation
-  // changes or a new message lands — but not when we're loading *older*
-  // history (that would yank the user's scroll position).
+  const newestMessageId = messages.at(-1)?.message_id;
+  
   useEffect(() => {
-    if (isLoadingOlder) return;
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [activeConversationId, messages.length, isLoadingOlder]);
+  }, [activeConversationId, newestMessageId]);
 
-  // Mark the conversation read once its newest message is visible.
   useEffect(() => {
     if (!activeConversationId || messages.length === 0) return;
     const newest = messages[0];
-    markAsRead.mutate({ conversationId: activeConversationId, lastReadMessageId: newest.message_id });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    markAsRead.mutate({
+      conversationId: activeConversationId,
+      lastReadMessageId: newest.message_id
+    });
   }, [activeConversationId, messages[0]?.message_id]);
 
   const handleScroll = async () => {
@@ -56,15 +56,21 @@ export const MessagePane = () => {
     if (!el || el.scrollTop > 80 || isLoadingOlder) return;
 
     setIsLoadingOlder(true);
-    const previousHeight = el.scrollHeight;
+    prevHeightRef.current = el.scrollHeight;            
+    isRestoringRef.current = true;                      
+
     await loadOlderMessages();
+
     requestAnimationFrame(() => {
       if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - previousHeight;
+        const newHeight = scrollContainerRef.current.scrollHeight;
+        scrollContainerRef.current.scrollTop = newHeight - prevHeightRef.current;
       }
       setIsLoadingOlder(false);
+      isRestoringRef.current = false;   
     });
   };
+
 
   if (!activeConversationId) {
     return <EmptyState />;
@@ -106,7 +112,7 @@ export const MessagePane = () => {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         )}
-
+        <>{console.log("\nhistory data: ",historyQuery.data)}</>
         {historyQuery.isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -117,10 +123,10 @@ export const MessagePane = () => {
           </div>
         ) : (
           // history comes back newest-first; reverse for natural top-to-bottom reading order
-          [...messages].reverse().map((message,i) => (
+          [...messages].reverse().map((message) => (
             <MessageBubble
-              key={i}
-              message={message}
+              key={message.clientId ?? message.message_id}
+              message={resolveMessageStatus(message, otherUserId, conversation)}
               isOwn={message.sender_id === user?.id}
             />
           ))
@@ -132,3 +138,27 @@ export const MessagePane = () => {
     </div>
   );
 };
+
+/**
+ * For our own messages, a live event (`status` already set by
+ * useChatMessages/useCentrifugo this session) always wins. For messages
+ * loaded from history with no live event yet in this session — e.g. the
+ * other person already read them before we even opened the app — we
+ * derive "seen" from the conversation's persisted `readReceipts` map.
+ * There's no persisted signal for "delivered" (online-at-send-time is
+ * never stored), so a historical message with no live event falls back
+ * to a plain single tick rather than guessing.
+ */
+function resolveMessageStatus(
+  message: MessageDoc,
+  otherUserId: string | undefined,
+  conversation: ConversationDoc | undefined,
+): MessageDoc {
+  console.log({message});
+  if (message.status || !otherUserId || !conversation) {
+    return { ...message, status: message.status ?? 'sent' };
+  }
+
+  const otherUserLastRead = conversation.readReceipts[otherUserId] ?? 0;
+  return { ...message, status: message.message_id <= otherUserLastRead ? 'read' : 'sent' };
+}

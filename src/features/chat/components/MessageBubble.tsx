@@ -18,6 +18,8 @@ const StatusIcon = ({ status }: { status: MessageDoc['status'] }) => {
       return <Check className="h-3 w-3 text-muted-foreground" />;
     case 'delivered':
       return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+    case 'read':
+      return <CheckCheck className="h-3 w-3 text-sky-500" />;
     case 'failed':
       return <AlertCircle className="h-3 w-3 text-destructive" />;
     default:
@@ -41,7 +43,7 @@ export const MessageBubble = ({ message, isOwn }: MessageBubbleProps) => {
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p>
         <div className="mt-1 flex items-center justify-end gap-1">
           <span className="text-[10px] text-muted-foreground">{format(new Date(message.created_at), 'HH:mm')}</span>
-          {isOwn && <StatusIcon status={message.status ?? 'delivered'} />}
+          {isOwn && <StatusIcon status={message.status ?? 'sent'} />}
         </div>
       </div>
     </div>

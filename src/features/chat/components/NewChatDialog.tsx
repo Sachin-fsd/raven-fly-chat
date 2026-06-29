@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useUserSearch, useCreateConversation } from '../hooks/useUserSearch';
 import { useChatStore } from '../store/useChatStore';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 
 const getInitials = (name: string): string =>
   name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -16,8 +17,14 @@ export const NewChatDialog = () => {
   const setOpen = useChatStore((s) => s.setNewChatDialogOpen);
   const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 350);
 
-  const { data: results, isFetching } = useUserSearch(query);
+  // isFetching would otherwise flash on every keystroke before the debounce
+  // even fires; comparing against the debounced value tells us whether
+  // we're "about to search" (still typing) vs. actually waiting on the
+  // network, so the spinner only shows when a request is genuinely in flight.
+  const { data: results, isFetching } = useUserSearch(debouncedQuery);
+  const isPendingDebounce = query !== debouncedQuery;
   const createConversation = useCreateConversation();
 
   const handleSelectUser = (userId: string, userName: string, userEmail: string) => {
@@ -57,32 +64,33 @@ export const NewChatDialog = () => {
           </div>
 
           <div className="max-h-72 overflow-y-auto thin-scrollbar">
-            {isFetching && (
+            {(isFetching || isPendingDebounce) && query.trim().length > 0 && (
               <div className="flex items-center justify-center py-6 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
             )}
 
-            {!isFetching && query.trim().length > 0 && results?.length === 0 && (
+            {!isFetching && !isPendingDebounce && query.trim().length > 0 && results?.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">No users found</p>
             )}
 
-            {results?.map((user) => (
-              <button
-                key={user.id}
-                onClick={() => handleSelectUser(user.id, user.name, user.email)}
-                disabled={createConversation.isPending}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-muted disabled:opacity-50"
-              >
-                <Avatar>
-                  <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-                </Avatar>
-                <div className="overflow-hidden">
-                  <p className="truncate text-sm font-medium">{user.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-                </div>
-              </button>
-            ))}
+            {!isPendingDebounce &&
+              results?.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => handleSelectUser(user.id, user.name, user.email)}
+                  disabled={createConversation.isPending}
+                  className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-muted disabled:opacity-50"
+                >
+                  <Avatar>
+                    <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="overflow-hidden">
+                    <p className="truncate text-sm font-medium">{user.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                  </div>
+                </button>
+              ))}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
