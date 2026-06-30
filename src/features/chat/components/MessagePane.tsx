@@ -112,7 +112,7 @@ export const MessagePane = () => {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         )}
-        <>{console.log("\nhistory data: ",historyQuery.data)}</>
+        {/* <>{console.log("\nhistory data: ",historyQuery.data)}</> */}
         {historyQuery.isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -154,7 +154,7 @@ function resolveMessageStatus(
   otherUserId: string | undefined,
   conversation: ConversationDoc | undefined,
 ): MessageDoc {
-  console.log({message});
+  // console.log({message});
   if (message.status || !otherUserId || !conversation) {
     return { ...message, status: message.status ?? 'sent' };
   }
